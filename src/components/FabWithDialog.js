@@ -15,6 +15,7 @@ import CircularProgress from "@material-ui/core/CircularProgress";
 import {getHosEvents, updateHosEvent} from "../service";
 import moment from "moment";
 import useInterval from '@use-it/interval';
+import axios from "axios";
 
 const useStyles = makeStyles(() => ({
   root: {
@@ -68,7 +69,9 @@ export default function FabWithDialog() {
 
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [forceRerender, setForceRerender] = useState(false)
+  const [forceRerender, setForceRerender] = useState(false);
+
+  const [cancelToken, setCancelToken] = useState(null);
 
   useInterval(() => {
     setForceRerender(!forceRerender)
@@ -105,11 +108,12 @@ export default function FabWithDialog() {
   const shiftDataOnOneDay = async () => {
     setUploading(true);
     setExtState('uploading');
+    const cancelTokenSource = axios.CancelToken.source();
+    setCancelToken(cancelTokenSource)
     Promise.allSettled(
       data
         .filter(hosEvent => !successData[hosEvent._id] && hosEvent.userId === driver)
         .map(async hosEvent => {
-
           try {
             const updatedHosEvent = {
               ...hosEvent,
@@ -123,7 +127,7 @@ export default function FabWithDialog() {
               }
             }
 
-            const result = await updateHosEvent(updatedHosEvent._id, updatedHosEvent)
+            const result = await updateHosEvent(updatedHosEvent._id, updatedHosEvent, cancelTokenSource.token)
             if (result && result?.ok) {
               setSuccessData(state => R.assoc(result.id, hosEvent._rev, state))
               setErroredData(state => R.dissoc(hosEvent._id, state))
@@ -138,6 +142,7 @@ export default function FabWithDialog() {
           }
         }))
       .finally(() => {
+        setCancelToken(null)
         setUploading(false);
         setExtState('finished');
       })
@@ -149,7 +154,6 @@ export default function FabWithDialog() {
   const selectedEndDate = segment?.endDate && moment(segment?.endDate, 'M-D-yyyy').format('yyyy/MM/DD')
   const selectedDriver = segment?.driver;
 
-  console.log(selectedStartDate, selectedEndDate, selectedDriver)
 
   const refreshData = (driver, startDate, endDate) => {
     if (driver && startDate && endDate) {
@@ -219,6 +223,15 @@ export default function FabWithDialog() {
 
             </>}
           actions={(<>
+            <Button
+              disabled={!cancelToken}
+              color="primary"
+              onClick={() => {
+                cancelToken.cancel();
+              }}
+            >
+              Stop
+            </Button>
             <Button
               disabled={!(Object.keys(erroredData).length || Object.keys(successData).length) || uploading || loading}
               color="primary"
