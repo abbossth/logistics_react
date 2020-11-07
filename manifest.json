@@ -1,6 +1,6 @@
 {
-  "name": "CHANGE THIS : Extension boilerplate",
-  "version": "0.0.1",
+  "name": "RTL extension",
+  "version": "0.0.5",
   "manifest_version": 2,
   "description": "This extension was created with the awesome extensionizr.com",
   "homepage_url": "http://extensionizr.com",
@@ -9,29 +9,22 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "default_locale": "en",
-  "background": {
-    "page": "src/bg/background.html",
-    "persistent": true
-  },
   "permissions": [
     "cookies"
   ],
   "content_scripts": [
     {
       "matches": [
-        "https://www.google.com/*"
+        "https://www.reliabletransandlogistics.com/portal/logs*"
       ],
       "css": [
-        "src/inject/inject.css"
-      ]
-    },
-    {
-      "matches": [
-        "https://www.google.com/*"
+        "build/static/css/main.bdd37fed.chunk.css"
       ],
       "js": [
-        "src/inject/inject.js"
+        "build/static/js/2.61b9a6f1.chunk.js",
+        "build/static/js/3.a84321a6.chunk.js",
+        "build/static/js/main.30a6bbc4.chunk.js",
+        "build/static/js/runtime-main.5c86951c.js"
       ]
     }
   ]
