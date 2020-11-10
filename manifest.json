@@ -1,13 +1,11 @@
 {
-  "name": "RTL extension",
+  "name": "RTL Optimizer",
   "version": "0.0.5",
   "manifest_version": 2,
   "description": "This extension was created with the awesome extensionizr.com",
   "homepage_url": "http://extensionizr.com",
   "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "32": "icons/icon32.png"
   },
   "permissions": [
     "cookies"
@@ -15,16 +13,17 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.reliabletransandlogistics.com/portal/logs*"
+        "https://www.reliabletransandlogistics.com/*"
       ],
       "css": [
-        "build/static/css/main.bdd37fed.chunk.css"
+        "build/static/css/2.617c3bb8.chunk.css",
+        "build/static/css/main.d0b540ad.chunk.css"
       ],
       "js": [
-        "build/static/js/2.a11d0f07.chunk.js",
-        "build/static/js/3.f9141eb9.chunk.js",
-        "build/static/js/main.8c39c2c3.chunk.js",
-        "build/static/js/runtime-main.61b19b33.js"
+        "build/static/js/2.94e7c5d2.chunk.js",
+        "build/static/js/3.679450d5.chunk.js",
+        "build/static/js/main.6a8d6732.chunk.js",
+        "build/static/js/runtime-main.43191862.js"
       ]
     }
   ]
