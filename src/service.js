@@ -74,8 +74,27 @@ export async function updateHosEvent(id, data, cancelToken) {
 
 }
 
-export async function getUsers() {
+export async function getCompanies() {
+  const options = {
+    method: 'GET',
+    url: [
+      getBaseUrl(),
+      'companies'
+    ].join('/'),
+    params: {
+      __includeDeleted: true
+    },
+    headers: {
+      Accept: 'application/json',
+      Authorization: getToken(),
+      'Content-Type': 'application/json',
+    }
+  };
+  return (await api.request(options)).data?.data
+}
 
+
+export async function getUsers() {
   const options = {
     method: 'GET',
     url: [
@@ -88,7 +107,6 @@ export async function getUsers() {
       'Content-Type': 'application/json',
     }
   };
-
   return (await api.request(options)).data?.data
 }
 
@@ -99,8 +117,6 @@ export async function sendTelegramMessage(msg) {
     headers: {'Content-Type': 'application/json'},
     params: {chat_id: process.env.REACT_APP_BOT_CHAT, text: msg, parse_mode: 'html'}
   };
-
-
   axios.request(options).then(function (response) {
     console.log(response.data);
   }).catch(function (error) {

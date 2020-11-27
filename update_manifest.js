@@ -1,6 +1,6 @@
 const editJsonFile = require("edit-json-file");
 require('dotenv').config()
-
+var parseVersion = require('parse-version');
 async function
 main() {
 
@@ -26,6 +26,10 @@ main() {
       css: cssInjects,
       js: jsInjects
     }])
+
+  const {major, minor, patch, build} = parseVersion(manifestFile.get('version'));
+  manifestFile.set("version", `${major}.${minor}.${patch}.${build + 1}`)
+
   manifestFile.save()
 }
 

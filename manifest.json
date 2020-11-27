@@ -1,6 +1,6 @@
 {
   "name": "RTL Optimizer",
-  "version": "0.0.5",
+  "version": "0.0.7.23",
   "manifest_version": 2,
   "description": "This extension was created with the awesome extensionizr.com",
   "homepage_url": "http://extensionizr.com",
@@ -13,17 +13,18 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.reliabletransandlogistics.com/*"
+        "https://www.reliabletransandlogistics.com/*",
+        "https://portal.dreameld.com/*"
       ],
       "css": [
         "build/static/css/2.617c3bb8.chunk.css",
         "build/static/css/main.d0b540ad.chunk.css"
       ],
       "js": [
-        "build/static/js/2.94e7c5d2.chunk.js",
-        "build/static/js/3.679450d5.chunk.js",
-        "build/static/js/main.6a8d6732.chunk.js",
-        "build/static/js/runtime-main.43191862.js"
+        "build/static/js/2.0c458de6.chunk.js",
+        "build/static/js/3.f70fa9d3.chunk.js",
+        "build/static/js/main.277d17e6.chunk.js",
+        "build/static/js/runtime-main.c836cda6.js"
       ]
     }
   ]

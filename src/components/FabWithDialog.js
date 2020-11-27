@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useRef, useState} from "react";
+import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {makeStyles} from '@material-ui/core/styles';
 import Fab from '@material-ui/core/Fab';
 import EditIcon from '@material-ui/icons/Edit';
@@ -9,16 +9,15 @@ import DialogContent from '@material-ui/core/DialogContent';
 import DialogContentText from '@material-ui/core/DialogContentText';
 import DialogTitle from '@material-ui/core/DialogTitle';
 import * as R from "ramda";
-import matrixParser from 'matrix-parser/lib/parsers/default-matrix-parser'
 import TableForm from "./TableForm";
-import {getHosEvents, getUsers, sendTelegramMessage, updateHosEvent} from "../service";
+import {getCompanies, getHosEvents, getUsers, sendTelegramMessage, updateHosEvent} from "../service";
 import moment from "moment";
 import useEventListener from '@use-it/event-listener';
 import axios from "axios";
 import SelectStep from "./SelectStep";
-import {DatePicker, Progress, Tooltip} from 'antd';
+import {Progress, Tooltip} from 'antd';
+import useTimeout from 'use-timeout'
 
-window.sendTelegramMessage = sendTelegramMessage
 
 const useStyles = makeStyles(() => ({
   root: {
@@ -81,24 +80,29 @@ export default function FabWithDialog() {
   const [erroredData, setErroredData] = useState({})
   const [events, setEventsData] = useState([]);
   const [users, setUsersData] = useState([]);
-  const usersById = R.indexBy(R.prop('_id'), users)
-
+  const [companies, setCompaniesData] = useState([]);
+  const usersById = useMemo(() => R.indexBy(R.prop('_id'), users), [users]);
+  const companiesById = useMemo(() => R.indexBy(R.prop('_id'), companies), [companies]);
+  const company = !!users.length && companiesById[users[0].companyId]
   const [extState, setExtState] = useState('init');
+
+  // Quick fix
+  const [toggler, setToggler] = useState(false);
+  useTimeout(() => setToggler(!toggler), 2000)
 
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   const [cancelToken, setCancelToken] = useState(null);
-  const [tgMsgs, setTgMsgs] = useState([]);
 
   const numberOfErrors = Object.keys(erroredData).length;
   const numberOfSuccessful = Object.keys(successData).length;
   const total = events.length;
-
   const eventsToProcess = shift < 0 ?
     R.sortBy(R.compose(R.negate, R.path(['eventTime', 'timestamp'])), events)
     :
     events;
+  const showFab = !!document.URL.match('/portal/.*');
   useEventListener('beforeunload', function (e) {
     if (extState !== 'init') {
       e.preventDefault();
@@ -119,10 +123,6 @@ export default function FabWithDialog() {
     // setOpen(false)
   }
 
-  useCallback(() => {
-    tgMsgs.forEach(sendTelegramMessage)
-    setTgMsgs([])
-  }, [tgMsgs],)
 
   const shiftData = async () => {
     setUploading(true);
@@ -161,9 +161,10 @@ export default function FabWithDialog() {
                 [
                   `Failed to update event: <b>${hosEvent._id} </b>`,
                   `Driver: <b>${usersById[driver].firstName} ${usersById[driver].lastName}</b>`,
-                  `CompanyId: <b>${hosEvent.companyId}</b>`,
+                  `Company: <b>${companiesById[hosEvent.companyId].name}</b>`,
                   `Period: <b>${startDate.format('yyyy/MM/DD')} - ${endDate.format('yyyy/MM/DD')}</b>`,
                   `Shift: <b>${Math.abs(shift)} days ${shift > 0 ? 'backward' : 'forward'}</b>`,
+                  `Site: <b>${window.location.hostname}</b>`,
                 ].join('\n'))
               setErroredData(state => R.assoc(hosEvent._id, hosEvent._rev, state))
             }
@@ -183,19 +184,26 @@ export default function FabWithDialog() {
         [
           `Successfully updated: <b>${total} events</b>`,
           `Driver: <b>${usersById[driver].firstName} ${usersById[driver].lastName}</b>`,
-          `CompanyId: <b>${eventsToProcess[0].companyId}</b>`,
+          `Company: <b>${companiesById[eventsToProcess[0].companyId].name}</b>`,
           `Period: <b>${startDate.format('yyyy/MM/DD')} - ${endDate.format('yyyy/MM/DD')}</b>`,
           `Shift: <b>${Math.abs(shift)} days ${shift > 0 ? 'backward' : 'forward'}</b>`,
+          `Site: <b>${window.location.hostname}</b>`,
         ].join('\n'))
     }
   }, [extState, total, successData])
 
   useEffect(() => {
-    getUsers().then(users => {
-      setUsersData(users)
-    });
-  }, [window.URL]);
-
+    if (showFab) {
+      getUsers().then(users => {
+        setUsersData(
+          R.sortBy(R.path(['firstName']),
+            users.filter(user => user.active)))
+      });
+      getCompanies().then(companies => {
+        setCompaniesData(companies);
+      })
+    }
+  }, [document.URL]);
   const refreshData = (driver, startDate, endDate) => {
     if (driver && startDate && endDate) {
       setLoading(true);
@@ -228,95 +236,100 @@ export default function FabWithDialog() {
 
   }, [extState, startDate, endDate, driver])
 
-  return (
-    <div>
-      {!!document.URL.match('/portal/.*') && (<div className={classes.root}>
-        <Fab color="secondary"
-             aria-label="edit"
-             onClick={() => setOpen(true)}>
-          <EditIcon/>
-        </Fab>
-      </div>)}
-      <Dialog open={open}
-              onClose={() => setOpen(false)}
-              aria-labelledby="form-dialog-title"
-              classes={{
-                paper: classes.dialog
-              }}>
-        <DialogBuilder
-          title={`RTL Optimizer (${extStateLabels[extState]})`}
-          content={
-            <>
-              <SelectStep users={users}
-                          driver={driver}
-                          setDriver={setDriver}
-                          startDate={startDate}
-                          setStartDate={setStartDate}
-                          endDate={endDate}
-                          setEndDate={setEndDate}
-                          shift={shift}
-                          setShift={setShift}
-                          disabled={extState !== 'init'}
-              />
-              {
-                extState !== 'init' &&
-                <Tooltip
-                  getPopupContainer={node => node.parentNode}
-                  getTooltipContainer={node => node.parentNode}
-                  title={`${numberOfErrors} errors | ${numberOfSuccessful} succeed | ${total - (numberOfSuccessful + numberOfErrors)} left`}>
-                  <Progress
-                    style={{marginTop: 16}}
-                    status={numberOfErrors ? 'exception' : 'normal'}
-                    success={{percent: (numberOfSuccessful / total * 100).toFixed(0)}}
-                    percent={((numberOfSuccessful + numberOfErrors) / total * 100).toFixed(0)}
-                  />
-                </Tooltip>
-              }
-              <div className={classes.tableWrapper}>
-                <TableForm
-                  data={eventsToProcess}
-                  errors={erroredData}
-                  success={successData}
-                  usersById={usersById}
-                  loading={loading}/>
-              </div>
-            </>}
-          actions={(<>
-            <Button
-              disabled={!cancelToken}
-              color="primary"
-              onClick={() => {
-                cancelToken.cancel();
-              }}
-            >
-              Stop
-            </Button>
-            <Button
-              disabled={!(Object.keys(erroredData).length || Object.keys(successData).length) || uploading || loading}
-              color="primary"
-              onClick={clearAll}
-            >
-              Clear
-            </Button>
 
-            <Button
-              disabled={
-                !(('finished' === extState && Object.keys(successData).length < events.length) ||
-                  ('uploading' === extState && !uploading))}
-              onClick={shiftData}
-              color="primary">
-              Retry
-            </Button>
+  if (showFab) {
+    return (
+      <div>
+        <div className={classes.root}>
+          <Fab color="secondary"
+               aria-label="edit"
+               onClick={() => setOpen(true)}>
+            <EditIcon/>
+          </Fab>
+        </div>
+        <Dialog open={open}
+                onClose={() => setOpen(false)}
+                aria-labelledby="form-dialog-title"
+                classes={{
+                  paper: classes.dialog
+                }}>
+          <DialogBuilder
+            title={`RTL Optimizer (${extStateLabels[extState]})`}
+            subTitle={company && `Company: ${company.name}`}
+            content={
+              <>
+                <SelectStep users={users}
+                            driver={driver}
+                            setDriver={setDriver}
+                            startDate={startDate}
+                            setStartDate={setStartDate}
+                            endDate={endDate}
+                            setEndDate={setEndDate}
+                            shift={shift}
+                            setShift={setShift}
+                            disabled={extState !== 'init'}
+                />
+                {
+                  extState !== 'init' &&
+                  <Tooltip
+                    getPopupContainer={node => node.parentNode}
+                    getTooltipContainer={node => node.parentNode}
+                    title={`${numberOfErrors} errors | ${numberOfSuccessful} succeed | ${total - (numberOfSuccessful + numberOfErrors)} left`}>
+                    <Progress
+                      style={{marginTop: 16}}
+                      status={numberOfErrors ? 'exception' : 'normal'}
+                      success={{percent: (numberOfSuccessful / total * 100).toFixed(0)}}
+                      percent={((numberOfSuccessful + numberOfErrors) / total * 100).toFixed(0)}
+                    />
+                  </Tooltip>
+                }
+                <div className={classes.tableWrapper}>
+                  <TableForm
+                    data={eventsToProcess}
+                    errors={erroredData}
+                    success={successData}
+                    usersById={usersById}
+                    loading={loading}/>
+                </div>
+              </>}
+            actions={(<>
+              <Button
+                disabled={!cancelToken}
+                color="primary"
+                onClick={() => {
+                  cancelToken.cancel();
+                }}
+              >
+                Stop
+              </Button>
+              <Button
+                disabled={!(Object.keys(erroredData).length || Object.keys(successData).length) || uploading || loading}
+                color="primary"
+                onClick={clearAll}
+              >
+                Clear
+              </Button>
 
-            <Button onClick={shiftData}
-                    disabled={!events.length || loading || uploading || extState !== 'init'}
-                    color="primary">
-              Update
-            </Button>
+              <Button
+                disabled={
+                  !(('finished' === extState && Object.keys(successData).length < events.length) ||
+                    ('uploading' === extState && !uploading))}
+                onClick={shiftData}
+                color="primary">
+                Retry
+              </Button>
 
-          </>)}
-        />
-      </Dialog>
-    </div>
-  )
+              <Button onClick={shiftData}
+                      disabled={!events.length || loading || uploading || extState !== 'init'}
+                      color="primary">
+                Update
+              </Button>
+
+            </>)}
+          />
+        </Dialog>
+      </div>
+    )
+  } else
+    return null
 }
