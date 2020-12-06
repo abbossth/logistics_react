@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from "react";
 import moment from "moment-timezone";
-import {Tag, Table, Select} from 'antd';
+import {Tag, Table, Select, Checkbox, Tooltip} from 'antd';
 import * as R from "ramda";
 
 const eventLabels = {
@@ -24,7 +24,20 @@ const originLabels = {
 
 
 export default function TableForm(props) {
-  const {data, success, errors, loading, usersById} = props
+  const {extState, data, success, errors, loading, usersById, selection, setSelection} = props;
+  const getEventStatus = (event) => {
+    if (!selection[event._id]) {
+      return 'ignored'
+    } else if (errors[event._id]) {
+      return 'error'
+    } else if (success[event._id]) {
+      return 'done'
+    } else {
+      return 'pending'
+    }
+  }
+
+
   const columns = [
     {
       dataIndex: ['eventTime', 'timestamp'],
@@ -86,7 +99,13 @@ export default function TableForm(props) {
       key: '_id',
       title: 'Status',
       render: (_, event) => {
-        if (errors[event._id]) {
+        if (!selection[event._id]) {
+          return (
+            <Tag color={'default'}>
+              IGNORED
+            </Tag>
+          )
+        } else if (errors[event._id]) {
           return (
             <Tag color={'error'}>
               ERROR
@@ -108,6 +127,70 @@ export default function TableForm(props) {
       }
     }
   ];
+  const selectedCount = Object.values(selection).filter(R.identity).length;
+  const indeterminate = selectedCount > 0 && selectedCount < data.length;
+  const checked = selectedCount === data.length && data.length > 0;
+  const selectAllDisabled =
+    ['uploading'].includes(extState)
+    || data.length === 0
+    || data.length === Object.keys(success).length;
+  return <Table
+    rowKey={event => event._id}
+    rowSelection={{
+      hideSelectAll: true,
+      columnTitle: (
+        <Tooltip
+          title={(!indeterminate && checked) ? 'Uncheck all' : 'Check all'}
+          getPopupContainer={node => node.parentNode}
+          getTooltipContainer={node => node.parentNode}
+          // overlayStyle={{width: 250}}
+          overlayStyle={{width: 100}}
+          style={{textAlign: 'center !important'}}
+          overlayInnerStyle={{textAlign: 'center !important'}}
+        >
+          <Checkbox
+            indeterminate={indeterminate}
+            checked={checked}
+            disabled={selectAllDisabled}
+            onChange={(e) => {
+              if (!indeterminate && checked) {
+                // deselect all not done
+                const notDoneData = data.filter(event => !success[event._id]).map(R.prop('_id'))
+                setSelection(
+                  R.mergeDeepRight(
+                    selection,
+                    R.zipObj(notDoneData, R.repeat(false, notDoneData?.length || 0))
+                  )
+                )
+              } else {
+                // select all
+                setSelection(R.zipObj(data.map(R.prop('_id')), R.repeat(true, data?.length || 0)))
+              }
+            }}
+          />
+        </Tooltip>
+      ),
+      onChange: (selectedRowKeys, selectedRows) => {
+        setSelection(
+          R.zipObj(selectedRowKeys, R.repeat(true, selectedRows?.length || 0))
+        )
+      },
+      onSelectAll: (selected, selectedRows, changeRows) => {
+        setSelection(
+          R.zipObj(data.map(R.prop('_id')), R.repeat(selected, data?.length || 0))
+        )
+      },
+      getCheckboxProps: event => {
+        return ({
+          disabled: selectAllDisabled || ['done'].includes(getEventStatus(event)),
+        });
+      },
+      selectedRowKeys: data.map(R.prop('_id')).filter((eventId) => selection[eventId])
+    }}
+    pagination={{pageSizeOptions: [10, 50, 100, 1000]}}
+    loading={loading}
+    columns={columns}
+    dataSource={data}
 
-  return <Table loading={loading} columns={columns} dataSource={data}/>
+  />
 }

@@ -72,7 +72,7 @@ export default function FabWithDialog() {
   const [open, setOpen] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-
+  const [selection, setSelection] = useState({})
   const [driver, setDriver] = useState("");
   const [shift, setShift] = useState(1);
 
@@ -98,6 +98,7 @@ export default function FabWithDialog() {
   const numberOfErrors = Object.keys(erroredData).length;
   const numberOfSuccessful = Object.keys(successData).length;
   const total = events.length;
+  const totalSelected = Object.values(selection).filter(R.identity).length;
   const eventsToProcess = shift < 0 ?
     R.sortBy(R.compose(R.negate, R.path(['eventTime', 'timestamp'])), events)
     :
@@ -117,6 +118,7 @@ export default function FabWithDialog() {
     setEndDate('')
     setDriver('')
     setEventsData([])
+    setSelection({})
     setSuccessData({})
     setErroredData({})
     setExtState('init')
@@ -131,7 +133,7 @@ export default function FabWithDialog() {
     setCancelToken(cancelTokenSource)
     Promise.allSettled(
       eventsToProcess
-        .filter(hosEvent => !successData[hosEvent._id] && hosEvent.userId === driver)
+        .filter(hosEvent => !successData[hosEvent._id] && hosEvent.userId === driver && selection[hosEvent._id])
         .map(async hosEvent => {
           try {
             const updatedHosEvent = {
@@ -179,16 +181,18 @@ export default function FabWithDialog() {
   }
 
   useEffect(() => {
-    if (extState === 'finished' && total === numberOfSuccessful) {
+    if (extState === 'finished' && totalSelected === numberOfSuccessful) {
       sendTelegramMessage(
         [
-          `Successfully updated: <b>${total} events</b>`,
+          `Successfully updated: <b>${numberOfSuccessful} events</b>`,
+          total - totalSelected > 0 && `Ignored: <b>${total - totalSelected} events</b>`,
           `Driver: <b>${usersById[driver].firstName} ${usersById[driver].lastName}</b>`,
           `Company: <b>${companiesById[eventsToProcess[0].companyId].name}</b>`,
           `Period: <b>${startDate.format('yyyy/MM/DD')} - ${endDate.format('yyyy/MM/DD')}</b>`,
           `Shift: <b>${Math.abs(shift)} days ${shift > 0 ? 'backward' : 'forward'}</b>`,
           `Site: <b>${window.location.hostname}</b>`,
-        ].join('\n'))
+        ].filter(R.identity)
+          .join('\n'))
     }
   }, [extState, total, successData])
 
@@ -214,6 +218,9 @@ export default function FabWithDialog() {
       )
         .then(events => {
           setEventsData(R.sortBy(R.path(['eventTime', 'timestamp']), events))
+
+          setSelection(
+            R.zipObj(events.map(R.prop('_id')), R.repeat(true, events?.length || 0)))
         }).finally(() => setLoading(false));
     } else {
       throw new Error(("IllegalArgumentException"))
@@ -269,22 +276,28 @@ export default function FabWithDialog() {
                             setShift={setShift}
                             disabled={extState !== 'init'}
                 />
-                {
-                  extState !== 'init' &&
+                {events.length > 0 && (
                   <Tooltip
+                    overlayStyle={{maxWidth: '100vh'}}
                     getPopupContainer={node => node.parentNode}
                     getTooltipContainer={node => node.parentNode}
-                    title={`${numberOfErrors} errors | ${numberOfSuccessful} succeed | ${total - (numberOfSuccessful + numberOfErrors)} left`}>
+                    title={`${numberOfErrors} errors | ${numberOfSuccessful} succeed | ${totalSelected - (numberOfSuccessful + numberOfErrors)} left | ignored ${total - totalSelected}`}>
                     <Progress
+                      format={(percent, successPercent)=> `${numberOfSuccessful}/${totalSelected}`}
                       style={{marginTop: 16}}
                       status={numberOfErrors ? 'exception' : 'normal'}
                       success={{percent: (numberOfSuccessful / total * 100).toFixed(0)}}
-                      percent={((numberOfSuccessful + numberOfErrors) / total * 100).toFixed(0)}
+                      percent={((totalSelected) / total * 100).toFixed(0)}
                     />
                   </Tooltip>
+                )
+
                 }
                 <div className={classes.tableWrapper}>
                   <TableForm
+                    extState={extState}
+                    selection={selection}
+                    setSelection={setSelection}
                     data={eventsToProcess}
                     errors={erroredData}
                     success={successData}
@@ -303,7 +316,7 @@ export default function FabWithDialog() {
                 Stop
               </Button>
               <Button
-                disabled={!(Object.keys(erroredData).length || Object.keys(successData).length) || uploading || loading}
+                disabled={!(numberOfErrors || numberOfSuccessful) || uploading || loading}
                 color="primary"
                 onClick={clearAll}
               >
@@ -312,7 +325,7 @@ export default function FabWithDialog() {
 
               <Button
                 disabled={
-                  !(('finished' === extState && Object.keys(successData).length < events.length) ||
+                  !(('finished' === extState && numberOfSuccessful < totalSelected) ||
                     ('uploading' === extState && !uploading))}
                 onClick={shiftData}
                 color="primary">
