@@ -24,7 +24,17 @@ const originLabels = {
 
 
 export default function TableForm(props) {
-  const {extState, data, success, errors, loading, usersById, selection, setSelection} = props;
+  const {
+    extState,
+    data,
+    success,
+    errors,
+    loading,
+    usersById,
+    selection,
+    setSelection,
+    stats: {numberOfSuccessful, numberOfErrors, total, totalSelected}
+  } = props;
   const getEventStatus = (event) => {
     if (!selection[event._id]) {
       return 'ignored'
@@ -127,58 +137,45 @@ export default function TableForm(props) {
       }
     }
   ];
-  const selectedCount = Object.values(selection).filter(R.identity).length;
-  const indeterminate = selectedCount > 0 && selectedCount < data.length;
-  const checked = selectedCount === data.length && data.length > 0;
+  const selectAllIndeterminate = totalSelected > 0 && totalSelected < data.length;
+  const selectAllChecked = totalSelected === data.length && data.length > 0;
   const selectAllDisabled =
     ['uploading'].includes(extState)
     || data.length === 0
     || data.length === Object.keys(success).length;
+  const selectAll = (selected = true) => setSelection(R.zipObj(data.map(R.prop('_id')), R.repeat(selected, data?.length || 0)))
   return <Table
     rowKey={event => event._id}
     rowSelection={{
       hideSelectAll: true,
       columnTitle: (
         <Tooltip
-          title={(!indeterminate && checked) ? 'Uncheck all' : 'Check all'}
+          title={(!selectAllIndeterminate && selectAllChecked) ? 'Uncheck all' : 'Check all'}
           getPopupContainer={node => node.parentNode}
           getTooltipContainer={node => node.parentNode}
-          // overlayStyle={{width: 250}}
           overlayStyle={{width: 100}}
           style={{textAlign: 'center !important'}}
           overlayInnerStyle={{textAlign: 'center !important'}}
         >
           <Checkbox
-            indeterminate={indeterminate}
-            checked={checked}
+            indeterminate={selectAllIndeterminate}
+            checked={selectAllChecked}
             disabled={selectAllDisabled}
             onChange={(e) => {
-              if (!indeterminate && checked) {
+              if (!selectAllIndeterminate && selectAllChecked) {
                 // deselect all not done
-                const notDoneData = data.filter(event => !success[event._id]).map(R.prop('_id'))
-                setSelection(
-                  R.mergeDeepRight(
-                    selection,
-                    R.zipObj(notDoneData, R.repeat(false, notDoneData?.length || 0))
-                  )
-                )
+                const succeed = Object.keys(success);
+                setSelection(R.zipObj(succeed, R.repeat(true, succeed.length || 0)))
               } else {
                 // select all
-                setSelection(R.zipObj(data.map(R.prop('_id')), R.repeat(true, data?.length || 0)))
+                selectAll(true)
               }
             }}
           />
         </Tooltip>
       ),
       onChange: (selectedRowKeys, selectedRows) => {
-        setSelection(
-          R.zipObj(selectedRowKeys, R.repeat(true, selectedRows?.length || 0))
-        )
-      },
-      onSelectAll: (selected, selectedRows, changeRows) => {
-        setSelection(
-          R.zipObj(data.map(R.prop('_id')), R.repeat(selected, data?.length || 0))
-        )
+        setSelection(R.zipObj(selectedRowKeys, R.repeat(true, selectedRows?.length || 0)))
       },
       getCheckboxProps: event => {
         return ({
@@ -187,7 +184,7 @@ export default function TableForm(props) {
       },
       selectedRowKeys: data.map(R.prop('_id')).filter((eventId) => selection[eventId])
     }}
-    pagination={{pageSizeOptions: [10, 50, 100, 1000]}}
+    pagination={{pageSizeOptions: [10, 50, 100, 250, 500, 1000]}}
     loading={loading}
     columns={columns}
     dataSource={data}

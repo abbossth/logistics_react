@@ -6,10 +6,11 @@ if (!localStorage.getItem('MAX_CONCURRENT_REQUESTS')) {
   localStorage.setItem('MAX_CONCURRENT_REQUESTS', "5")
 }
 
-const MAX_CONCURRENT_REQUESTS = parseInt(localStorage.getItem('MAX_CONCURRENT_REQUESTS'));
+export const MAX_CONCURRENT_REQUESTS = parseInt(localStorage.getItem('MAX_CONCURRENT_REQUESTS'));
 
 export let api = axios.create();
-ConcurrencyManager(api, MAX_CONCURRENT_REQUESTS)
+
+export const concurrencyManager = ConcurrencyManager(api, MAX_CONCURRENT_REQUESTS)
 
 
 function getBaseUrl() {
@@ -20,7 +21,7 @@ function getToken() {
   return localStorage.getItem('feathers-jwt') || process.env.REACT_APP_TOKEN
 }
 
-export async function getHosEvents(userId, from, to) {
+export async function getHosEvents(userId, from, to, cancelTokenSrc) {
   console.assert(userId)
   const params =
     R.filter(R.identity, {
@@ -30,6 +31,8 @@ export async function getHosEvents(userId, from, to) {
       // '$sort[0|eventTime.timestamp]': 1
     })
   const options = {
+    cancelToken: cancelTokenSrc.token,
+    cancelTokenSrc,
     method: 'GET',
     url: [
       getBaseUrl(),
@@ -46,11 +49,12 @@ export async function getHosEvents(userId, from, to) {
   return (await api.request(options)).data?.data
 }
 
-export async function updateHosEvent(id, data, cancelToken) {
+export async function updateHosEvent(id, data, cancelTokenSrc) {
   console.assert(data, data)
   if (data) {
     const options = {
-      cancelToken,
+      cancelToken: cancelTokenSrc.token,
+      cancelTokenSrc,
       method: 'PUT',
       url: [
         getBaseUrl(),

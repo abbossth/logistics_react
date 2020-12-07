@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import React, {useEffect, useMemo, useState} from "react";
 import {makeStyles} from '@material-ui/core/styles';
 import Fab from '@material-ui/core/Fab';
 import EditIcon from '@material-ui/icons/Edit';
@@ -10,14 +10,26 @@ import DialogContentText from '@material-ui/core/DialogContentText';
 import DialogTitle from '@material-ui/core/DialogTitle';
 import * as R from "ramda";
 import TableForm from "./TableForm";
-import {getCompanies, getHosEvents, getUsers, sendTelegramMessage, updateHosEvent} from "../service";
+import {
+  concurrencyManager,
+  getCompanies,
+  getHosEvents,
+  getUsers,
+  sendTelegramMessage,
+  updateHosEvent
+} from "../service";
 import moment from "moment";
 import useEventListener from '@use-it/event-listener';
 import axios from "axios";
 import SelectStep from "./SelectStep";
 import {Progress, Tooltip} from 'antd';
-import useTimeout from 'use-timeout'
+import {useRTL} from "../hooks/useRTL";
+import {Promise} from "bluebird";
 
+Promise.config({
+  cancellation: true,
+  warnings: true,
+});
 
 const useStyles = makeStyles(() => ({
   root: {
@@ -68,6 +80,7 @@ function DialogBuilder(props) {
 }
 
 export default function FabWithDialog() {
+  useRTL()
   const classes = useStyles();
   const [open, setOpen] = useState(false);
   const [startDate, setStartDate] = useState("");
@@ -85,20 +98,15 @@ export default function FabWithDialog() {
   const companiesById = useMemo(() => R.indexBy(R.prop('_id'), companies), [companies]);
   const company = !!users.length && companiesById[users[0].companyId]
   const [extState, setExtState] = useState('init');
-
-  // Quick fix
-  const [toggler, setToggler] = useState(false);
-  useTimeout(() => setToggler(!toggler), 2000)
-
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-
-  const [cancelToken, setCancelToken] = useState(null);
+  const [cancelPreviousRefresh, setCancelPreviousRefresh] = useState(null);
+  const [onCancel, setOnCancel] = useState(null);
 
   const numberOfErrors = Object.keys(erroredData).length;
   const numberOfSuccessful = Object.keys(successData).length;
   const total = events.length;
-  const totalSelected = Object.values(selection).filter(R.identity).length;
+  const totalSelected = Object.keys(selection).length;
   const eventsToProcess = shift < 0 ?
     R.sortBy(R.compose(R.negate, R.path(['eventTime', 'timestamp'])), events)
     :
@@ -114,8 +122,8 @@ export default function FabWithDialog() {
   const clearAll = () => {
     setLoading(false);
     setUploading(false);
-    setStartDate('')
-    setEndDate('')
+    // setStartDate('')
+    // setEndDate('')
     setDriver('')
     setEventsData([])
     setSelection({})
@@ -125,12 +133,9 @@ export default function FabWithDialog() {
     // setOpen(false)
   }
 
-
-  const shiftData = async () => {
+  const shiftData = () => {
     setUploading(true);
     setExtState('uploading');
-    const cancelTokenSource = axios.CancelToken.source();
-    setCancelToken(cancelTokenSource)
     Promise.allSettled(
       eventsToProcess
         .filter(hosEvent => !successData[hosEvent._id] && hosEvent.userId === driver && selection[hosEvent._id])
@@ -147,8 +152,8 @@ export default function FabWithDialog() {
                 }
               }
             }
-
-            const result = await updateHosEvent(updatedHosEvent._id, updatedHosEvent, cancelTokenSource.token)
+            const cancelTokenSource = axios.CancelToken.source();
+            const result = await updateHosEvent(updatedHosEvent._id, updatedHosEvent, cancelTokenSource)
             if (result && result?.ok) {
               setSuccessData(state => R.assoc(result.id, hosEvent._rev, state))
               setErroredData(state => R.dissoc(hosEvent._id, state))
@@ -174,12 +179,16 @@ export default function FabWithDialog() {
           }
         }))
       .finally(() => {
-        setCancelToken(null)
+        setOnCancel(null)
         setUploading(false);
         setExtState('finished');
-      })
+      });
+    setOnCancel(() => () => {
+      R.forEach(
+        (token) => token.cancel(),
+        concurrencyManager.queue.map(R.path(['request', 'cancelTokenSrc'])))
+    })
   }
-
   useEffect(() => {
     if (extState === 'finished' && totalSelected === numberOfSuccessful) {
       sendTelegramMessage(
@@ -210,11 +219,16 @@ export default function FabWithDialog() {
   }, [document.URL]);
   const refreshData = (driver, startDate, endDate) => {
     if (driver && startDate && endDate) {
+      if (cancelPreviousRefresh)
+        cancelPreviousRefresh()
       setLoading(true);
+      const cancelTokenSource = axios.CancelToken.source();
+      setCancelPreviousRefresh(() => cancelTokenSource.cancel);
       getHosEvents(
         driver,
         startDate.format('yyyy/MM/DD'),
-        endDate.format('yyyy/MM/DD')
+        endDate.format('yyyy/MM/DD'),
+        cancelTokenSource
       )
         .then(events => {
           setEventsData(R.sortBy(R.path(['eventTime', 'timestamp']), events))
@@ -284,7 +298,7 @@ export default function FabWithDialog() {
                     title={`${numberOfErrors} errors | ${numberOfSuccessful} succeed | ${totalSelected - (numberOfSuccessful + numberOfErrors)} left | ignored ${total - totalSelected}`}>
                     <Progress
                       format={(percent, successPercent)=> `${numberOfSuccessful}/${totalSelected}`}
-                      style={{marginTop: 16}}
+                      style={{marginTop: 16, paddingRight: 30}}
                       status={numberOfErrors ? 'exception' : 'normal'}
                       success={{percent: (numberOfSuccessful / total * 100).toFixed(0)}}
                       percent={((totalSelected) / total * 100).toFixed(0)}
@@ -302,15 +316,17 @@ export default function FabWithDialog() {
                     errors={erroredData}
                     success={successData}
                     usersById={usersById}
-                    loading={loading}/>
+                    loading={loading}
+                    stats={{numberOfSuccessful, numberOfErrors, total, totalSelected}}
+                  />
                 </div>
               </>}
             actions={(<>
               <Button
-                disabled={!cancelToken}
+                disabled={!onCancel}
                 color="primary"
                 onClick={() => {
-                  cancelToken.cancel();
+                  onCancel()
                 }}
               >
                 Stop

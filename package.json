@@ -15,6 +15,7 @@
     "antd": "^4.8.0",
     "axios": "^0.21.0",
     "axios-concurrency": "^1.0.3",
+    "bluebird": "^3.7.2",
     "dotenv": "^8.2.0",
     "edit-json-file": "^1.5.0",
     "matrix-parser": "^1.2.2",
@@ -27,6 +28,7 @@
     "react-router-dom": "^5.2.0",
     "react-scripts": "4.0.0",
     "string-similarity": "^4.0.2",
+    "tiny-async-pool": "^1.2.0",
     "use-persisted-state": "^0.3.0",
     "use-timeout": "^1.1.0",
     "web-vitals": "^0.2.4"
