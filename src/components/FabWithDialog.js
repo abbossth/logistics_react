@@ -25,6 +25,7 @@ import SelectStep from "./SelectStep";
 import {Progress, Tooltip} from 'antd';
 import {useRTL} from "../hooks/useRTL";
 import {Promise} from "bluebird";
+import {timezones} from "../utils";
 
 Promise.config({
   cancellation: true,
@@ -38,8 +39,8 @@ const useStyles = makeStyles(() => ({
     bottom: 50
   },
   dialog: {
-    width: '80vw',
-    maxWidth: '80vw',
+    width: '90vw',
+    maxWidth: '90vw',
     height: '80vh'
   },
   tableWrapper: {
@@ -83,15 +84,16 @@ export default function FabWithDialog() {
   useRTL()
   const classes = useStyles();
   const [open, setOpen] = useState(false);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
   const [selection, setSelection] = useState({})
-  const [driver, setDriver] = useState("");
+  const [driver, setDriver] = useState(null);
   const [shift, setShift] = useState(1);
+  const [events, setEventsData] = useState([]);
 
   const [successData, setSuccessData] = useState({})
   const [erroredData, setErroredData] = useState({})
-  const [events, setEventsData] = useState([]);
+
   const [users, setUsersData] = useState([]);
   const [companies, setCompaniesData] = useState([]);
   const usersById = useMemo(() => R.indexBy(R.prop('_id'), users), [users]);
@@ -102,16 +104,24 @@ export default function FabWithDialog() {
   const [uploading, setUploading] = useState(false);
   const [cancelPreviousRefresh, setCancelPreviousRefresh] = useState(null);
   const [onCancel, setOnCancel] = useState(null);
+  const [enableTimeSelect, _setEnableTimeSelect] = useState(false);
 
   const numberOfErrors = Object.keys(erroredData).length;
   const numberOfSuccessful = Object.keys(successData).length;
-  const total = events.length;
+  const totalNumber = events.length;
   const totalSelected = Object.keys(selection).length;
   const eventsToProcess = shift < 0 ?
     R.sortBy(R.compose(R.negate, R.path(['eventTime', 'timestamp'])), events)
     :
-    events;
+    R.sortBy(R.compose(R.path(['eventTime', 'timestamp'])), events);
   const showFab = !!document.URL.match('/portal/.*');
+  const setEnableTimeSelect = (v) => {
+    if (v && totalNumber === totalSelected) {
+      setStartDate(startDate.clone().startOf('day'));
+      setEndDate(endDate.clone().endOf('day'));
+    }
+    _setEnableTimeSelect(v)
+  }
   useEventListener('beforeunload', function (e) {
     if (extState !== 'init') {
       e.preventDefault();
@@ -141,14 +151,18 @@ export default function FabWithDialog() {
         .filter(hosEvent => !successData[hosEvent._id] && hosEvent.userId === driver && selection[hosEvent._id])
         .map(async hosEvent => {
           try {
+            const updatedEventTime = moment.tz(
+              hosEvent.eventTime.timestamp,
+              timezones[hosEvent.eventTime.logDate.timeZone.id] || 'America/Los_Angeles'
+            ).subtract(shift, enableTimeSelect ? 'hours' : 'days');
             const updatedHosEvent = {
               ...hosEvent,
               eventTime: {
                 ...hosEvent.eventTime,
-                timestamp: hosEvent.eventTime.timestamp - 60 * 60 * 24 * 1000 * shift,
+                timestamp: updatedEventTime.unix() * 1000,
                 logDate: {
                   ...hosEvent.eventTime.logDate,
-                  date: moment(hosEvent.eventTime.logDate.date, "yyyy/MM/DD").subtract(60 * 60 * 24 * shift, "seconds").format("yyyy/MM/DD")
+                  date: updatedEventTime.format("yyyy/MM/DD")
                 }
               }
             }
@@ -170,7 +184,7 @@ export default function FabWithDialog() {
                   `Driver: <b>${usersById[driver].firstName} ${usersById[driver].lastName}</b>`,
                   `Company: <b>${companiesById[hosEvent.companyId].name}</b>`,
                   `Period: <b>${startDate.format('yyyy/MM/DD')} - ${endDate.format('yyyy/MM/DD')}</b>`,
-                  `Shift: <b>${Math.abs(shift)} days ${shift > 0 ? 'backward' : 'forward'}</b>`,
+                  `Shift: <b>${Math.abs(shift)} ${enableTimeSelect ? 'hours' : 'days'} ${shift > 0 ? 'backward' : 'forward'}</b>`,
                   `Site: <b>${window.location.hostname}</b>`,
                 ].join('\n'))
               setErroredData(state => R.assoc(hosEvent._id, hosEvent._rev, state))
@@ -193,20 +207,34 @@ export default function FabWithDialog() {
     if (extState === 'finished' && totalSelected === numberOfSuccessful) {
       sendTelegramMessage(
         [
-          `Successfully updated: <b>${numberOfSuccessful} events</b>`,
-          total - totalSelected > 0 && `Ignored: <b>${total - totalSelected} events</b>`,
-          `Driver: <b>${usersById[driver].firstName} ${usersById[driver].lastName}</b>`,
-          `Company: <b>${companiesById[eventsToProcess[0].companyId].name}</b>`,
-          `Period: <b>${startDate.format('yyyy/MM/DD')} - ${endDate.format('yyyy/MM/DD')}</b>`,
-          `Shift: <b>${Math.abs(shift)} days ${shift > 0 ? 'backward' : 'forward'}</b>`,
-          `Site: <b>${window.location.hostname}</b>`,
+
+          `Successfully updated: <b>${numberOfSuccessful} events</b>`
+          ,
+          (totalNumber - totalSelected > 0) &&
+          `Ignored: <b>${totalNumber - totalSelected} events</b>`
+          ,
+
+          `Driver: <b>${usersById[driver].firstName} ${usersById[driver].lastName}</b>`
+          ,
+
+          `Company: <b>${companiesById[eventsToProcess[0].companyId].name}</b>`
+          ,
+
+          `Period: <b>${startDate.format('yyyy/MM/DD')} - ${endDate.format('yyyy/MM/DD')}</b>`
+          ,
+
+          `Shift: <b>${Math.abs(shift)} ${enableTimeSelect ? 'hours' : 'days'} ${shift > 0 ? 'backward' : 'forward'}</b>`
+          ,
+
+          `Site: <b>${window.location.hostname}</b>`
+          ,
         ].filter(R.identity)
-          .join('\n'))
+          .join('\n'));
     }
-  }, [extState, total, successData])
+  }, [extState, totalNumber, successData])
 
   useEffect(() => {
-    if (showFab) {
+    if (showFab && extState === 'init') {
       getUsers().then(users => {
         setUsersData(
           R.sortBy(R.path(['firstName']),
@@ -216,11 +244,13 @@ export default function FabWithDialog() {
         setCompaniesData(companies);
       })
     }
-  }, [document.URL]);
+  }, [document.URL, extState, showFab]);
+
   const refreshData = (driver, startDate, endDate) => {
     if (driver && startDate && endDate) {
-      if (cancelPreviousRefresh)
-        cancelPreviousRefresh()
+      if (cancelPreviousRefresh) {
+        cancelPreviousRefresh();
+      }
       setLoading(true);
       const cancelTokenSource = axios.CancelToken.source();
       setCancelPreviousRefresh(() => cancelTokenSource.cancel);
@@ -232,22 +262,25 @@ export default function FabWithDialog() {
       )
         .then(events => {
           setEventsData(R.sortBy(R.path(['eventTime', 'timestamp']), events))
-
-          setSelection(
-            R.zipObj(events.map(R.prop('_id')), R.repeat(true, events?.length || 0)))
-        }).finally(() => setLoading(false));
+          // setSelection(
+          //   R.zipObj(events.map(R.prop('_id')), R.repeat(true, events?.length || 0)))
+        })
+        .finally(() => {
+          setCancelPreviousRefresh(null);
+          setLoading(false);
+        });
     } else {
       throw new Error(("IllegalArgumentException"))
     }
   }
-
+  const startDateStr = startDate && startDate?.format('DD.MM.yyyy');
+  let endDateStr = endDate && endDate?.format('DD.MM.yyyy');
   useEffect(() => {
     const canRefreshData =
       startDate &&
       endDate &&
       driver &&
       extState === 'init';
-
     if (canRefreshData) {
       setEventsData([])
       setErroredData({})
@@ -255,8 +288,41 @@ export default function FabWithDialog() {
       refreshData(driver, startDate, endDate);
     }
 
-  }, [extState, startDate, endDate, driver])
+  }, [extState, startDateStr, endDateStr, driver]);
 
+  const startTimeStr = startDate && startDate?.format('DD.MM.yyyy HH:mm:ss');
+  let endTimeStr = endDate && endDate?.format('DD.MM.yyyy HH:mm:ss');
+  useEffect(() => {
+    if (extState === 'init') {
+      const filteredSelection = events
+        .map(event => {
+          if (enableTimeSelect) {
+            const timestamp = event.eventTime.timestamp;
+            const timezoneId = event.eventTime.logDate.timeZone.id;
+            const convertTZ = (x) => moment(x).tz((timezones[timezoneId] || 'America/Los_Angeles'), true);
+            const momentTimestamp = moment.tz(timestamp, timezones[timezoneId] || 'America/Los_Angeles');
+            if (momentTimestamp.isBetween(
+              convertTZ(startDate),
+              convertTZ(endDate),
+              'seconds',
+              '[]'
+            )) {
+              return {
+                [event._id]: true
+              }
+            } else {
+              return {}
+            }
+          } else {
+            return {[event._id]: true};
+          }
+        })
+        .reduce((acc, v) => {
+          return {...acc, ...v}
+        }, {});
+      setSelection(filteredSelection);
+    }
+  }, [events, extState, startTimeStr, endTimeStr, driver, enableTimeSelect])
 
   if (showFab) {
     return (
@@ -280,6 +346,8 @@ export default function FabWithDialog() {
             content={
               <>
                 <SelectStep users={users}
+                            enableTimeSelect={enableTimeSelect}
+                            setEnableTimeSelect={setEnableTimeSelect}
                             driver={driver}
                             setDriver={setDriver}
                             startDate={startDate}
@@ -292,16 +360,21 @@ export default function FabWithDialog() {
                 />
                 {events.length > 0 && (
                   <Tooltip
+                    placement={'bottom'}
                     overlayStyle={{maxWidth: '100vh'}}
                     getPopupContainer={node => node.parentNode}
                     getTooltipContainer={node => node.parentNode}
-                    title={`${numberOfErrors} errors | ${numberOfSuccessful} succeed | ${totalSelected - (numberOfSuccessful + numberOfErrors)} left | ignored ${total - totalSelected}`}>
+                    title={
+                      `${numberOfErrors} errors | ${numberOfSuccessful} succeed | ${totalSelected - (numberOfSuccessful + numberOfErrors)} left | ignored ${totalNumber - totalSelected}`
+                    }>
                     <Progress
-                      format={(percent, successPercent)=> `${numberOfSuccessful}/${totalSelected}`}
+                      format={(percent, successPercent) =>
+                        `${numberOfSuccessful}/${totalSelected}`
+                      }
                       style={{marginTop: 16, paddingRight: 30}}
                       status={numberOfErrors ? 'exception' : 'normal'}
-                      success={{percent: (numberOfSuccessful / total * 100).toFixed(0)}}
-                      percent={((totalSelected) / total * 100).toFixed(0)}
+                      success={{percent: (numberOfSuccessful / totalNumber * 100).toFixed(0)}}
+                      percent={((totalSelected) / totalNumber * 100).toFixed(0)}
                     />
                   </Tooltip>
                 )
@@ -317,7 +390,7 @@ export default function FabWithDialog() {
                     success={successData}
                     usersById={usersById}
                     loading={loading}
-                    stats={{numberOfSuccessful, numberOfErrors, total, totalSelected}}
+                    stats={{numberOfSuccessful, numberOfErrors, total: totalNumber, totalSelected}}
                   />
                 </div>
               </>}

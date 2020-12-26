@@ -1,33 +1,23 @@
-import React from "react";
-import {Select, DatePicker, Space, InputNumber, Progress, Tooltip} from 'antd';
+import React, {useState} from "react";
+import {Select, DatePicker, Space, InputNumber, Progress, Tooltip, Checkbox} from 'antd';
 import {compareTwoStrings} from 'string-similarity'
 import * as R from "ramda";
 
-const composeSome = R.composeWith((f, res) => R.isNil(res) ? f(res) : res);
 
 export default function SelectStep(props) {
-  const {users, startDate, setStartDate, endDate, setEndDate, driver, setDriver, shift, setShift, disabled} = props;
-
+  const {
+    users, startDate, setStartDate, endDate, setEndDate, driver, setDriver, shift, setShift, disabled,
+    enableTimeSelect, setEnableTimeSelect
+  } = props;
   return (
     <>
       <Space>
-        <DatePicker.RangePicker
-          disabled={disabled}
-          allowClear={false}
-          // getPopupContainer={() => container}
-          getPopupContainer={node => node.parentNode}
-          value={[startDate, endDate]}
-          onChange={range => {
-            if (range) {
-              setStartDate(range[0]);
-              setEndDate(range[1]);
-            }
-          }}/>
         <Tooltip
           getPopupContainer={node => node.parentNode}
           getTooltipContainer={node => node.parentNode}
           title='Select driver'>
           <Select
+            placeholder={'Select driver'}
             disabled={disabled}
             filterOption={(str, option) => {
               const name = option.children.join('').toLowerCase();
@@ -48,11 +38,29 @@ export default function SelectStep(props) {
               ))}
           </Select>
         </Tooltip>
+        <DatePicker.RangePicker
+          disabled={disabled}
+          allowClear={false}
+          showTime={enableTimeSelect}
+          // getPopupContainer={() => container}
+          getPopupContainer={node => node.parentNode}
+          value={[startDate, endDate]}
+          onChange={range => {
+            if (range) {
+              setStartDate(range[0]);
+              setEndDate(range[1]);
+            }
+          }}/>
         <Tooltip
           getPopupContainer={node => node.parentNode}
           getTooltipContainer={node => node.parentNode}
-          title='Specify shift back in days'>
+          title='Specify shift back'>
           <InputNumber
+            formatter={value => `${value}${enableTimeSelect ? 'hours' : 'days'}`}
+            parser={value => {
+              const intValue = parseInt(value)
+              return isNaN(intValue) ? 1 : intValue;
+            }}
             disabled={disabled}
             value={shift}
             precision={0}
@@ -60,8 +68,12 @@ export default function SelectStep(props) {
             placeholder="Input a number"
           />
         </Tooltip>
+        <Checkbox onChange={() => setEnableTimeSelect(!enableTimeSelect)}
+                  checked={enableTimeSelect}
+                  disabled={disabled}>
+          Hours
+        </Checkbox>
       </Space>
-
     </>
   );
 }

@@ -1,6 +1,6 @@
 {
   "name": "RTL Optimizer",
-  "version": "0.0.8.2",
+  "version": "0.0.8.5",
   "manifest_version": 2,
   "description": "This extension was created with the awesome extensionizr.com",
   "homepage_url": "http://extensionizr.com",
@@ -21,9 +21,9 @@
         "build/static/css/main.d0b540ad.chunk.css"
       ],
       "js": [
-        "build/static/js/2.d67d5069.chunk.js",
+        "build/static/js/2.abd151ba.chunk.js",
         "build/static/js/3.3fb026dc.chunk.js",
-        "build/static/js/main.207ca96e.chunk.js",
+        "build/static/js/main.a58c89d2.chunk.js",
         "build/static/js/runtime-main.f11d4f2d.js"
       ]
     }

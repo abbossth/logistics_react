@@ -1,7 +1,8 @@
-import React, {useEffect, useState} from "react";
+import React from "react";
 import moment from "moment-timezone";
-import {Tag, Table, Select, Checkbox, Tooltip} from 'antd';
+import {Tag, Table, Checkbox, Tooltip} from 'antd';
 import * as R from "ramda";
+import {timezones} from "../utils";
 
 const eventLabels = {
   DS_OFF: "Off duty",
@@ -36,12 +37,12 @@ export default function TableForm(props) {
     stats: {numberOfSuccessful, numberOfErrors, total, totalSelected}
   } = props;
   const getEventStatus = (event) => {
-    if (!selection[event._id]) {
-      return 'ignored'
-    } else if (errors[event._id]) {
+    if (errors[event._id]) {
       return 'error'
     } else if (success[event._id]) {
       return 'done'
+    } else if (!selection[event._id]) {
+      return 'ignored'
     } else {
       return 'pending'
     }
@@ -50,10 +51,12 @@ export default function TableForm(props) {
 
   const columns = [
     {
+      width: '21ch',
       dataIndex: ['eventTime', 'timestamp'],
       title: 'Time',
-      render: (x) => {
-        return moment.tz(x, 'Etc/GMT+4').format("MMM DD, HH:mm:ss");
+      render: (x, obj) => {
+        // return moment.tz(x, timezones[obj.eventTime.logDate.timeZone.id] || 'America/Los_Angeles').format("MMM DD, hh:mm:ss a");
+        return moment.tz(x, timezones[obj.eventTime.logDate.timeZone.id] || 'America/Los_Angeles').format("MMM DD, HH:mm:ss");
       }
     },
     {
@@ -109,13 +112,7 @@ export default function TableForm(props) {
       key: '_id',
       title: 'Status',
       render: (_, event) => {
-        if (!selection[event._id]) {
-          return (
-            <Tag color={'default'}>
-              IGNORED
-            </Tag>
-          )
-        } else if (errors[event._id]) {
+        if (errors[event._id]) {
           return (
             <Tag color={'error'}>
               ERROR
@@ -125,6 +122,12 @@ export default function TableForm(props) {
           return (
             <Tag color={'success'}>
               DONE
+            </Tag>
+          )
+        } else if (!selection[event._id]) {
+          return (
+            <Tag color={'default'}>
+              IGNORED
             </Tag>
           )
         } else {
@@ -137,20 +140,23 @@ export default function TableForm(props) {
       }
     }
   ];
-  const selectAllIndeterminate = totalSelected > 0 && totalSelected < data.length;
-  const selectAllChecked = totalSelected === data.length && data.length > 0;
+
+  const indeterminateSelected = totalSelected > 0 && totalSelected < data.length;
+  const allSelected = totalSelected === data.length && data.length > 0;
   const selectAllDisabled =
     ['uploading'].includes(extState)
     || data.length === 0
     || data.length === Object.keys(success).length;
-  const selectAll = (selected = true) => setSelection(R.zipObj(data.map(R.prop('_id')), R.repeat(selected, data?.length || 0)))
+
   return <Table
+    size={'small'}
     rowKey={event => event._id}
     rowSelection={{
+      selectedRowKeys: Object.keys(selection),
       hideSelectAll: true,
       columnTitle: (
         <Tooltip
-          title={(!selectAllIndeterminate && selectAllChecked) ? 'Uncheck all' : 'Check all'}
+          title={(!indeterminateSelected && allSelected) ? 'Uncheck all' : 'Check all'}
           getPopupContainer={node => node.parentNode}
           getTooltipContainer={node => node.parentNode}
           overlayStyle={{width: 100}}
@@ -158,17 +164,22 @@ export default function TableForm(props) {
           overlayInnerStyle={{textAlign: 'center !important'}}
         >
           <Checkbox
-            indeterminate={selectAllIndeterminate}
-            checked={selectAllChecked}
+            indeterminate={indeterminateSelected}
+            checked={allSelected}
             disabled={selectAllDisabled}
             onChange={(e) => {
-              if (!selectAllIndeterminate && selectAllChecked) {
+              if (!indeterminateSelected && allSelected) {
                 // deselect all not done
-                const succeed = Object.keys(success);
-                setSelection(R.zipObj(succeed, R.repeat(true, succeed.length || 0)))
+                const successIds = Object.keys(success);
+                setSelection(R.zipObj(successIds, R.repeat(true, successIds.length || 0)))
               } else {
                 // select all
-                selectAll(true)
+                const allIds = R.pluck('_id', data);
+                setSelection(
+                  R.zipObj(
+                    allIds,
+                    R.repeat(true, allIds?.length || 0))
+                );
               }
             }}
           />
@@ -182,7 +193,6 @@ export default function TableForm(props) {
           disabled: selectAllDisabled || ['done'].includes(getEventStatus(event)),
         });
       },
-      selectedRowKeys: data.map(R.prop('_id')).filter((eventId) => selection[eventId])
     }}
     pagination={{pageSizeOptions: [10, 50, 100, 250, 500, 1000]}}
     loading={loading}
