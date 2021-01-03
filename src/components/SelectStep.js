@@ -13,6 +13,7 @@ export default function SelectStep(props) {
     <>
       <Space>
         <Tooltip
+          mouseEnterDelay={1}
           getPopupContainer={node => node.parentNode}
           getTooltipContainer={node => node.parentNode}
           title='Select driver'>
@@ -30,7 +31,7 @@ export default function SelectStep(props) {
             value={driver}
             showSearch
             getPopupContainer={node => node.parentNode}
-            style={{minWidth: 200}}
+            style={{minWidth: 300}}
           >
             {users
               .map(user => (
@@ -52,27 +53,28 @@ export default function SelectStep(props) {
             }
           }}/>
         <Tooltip
+          mouseEnterDelay={1}
           getPopupContainer={node => node.parentNode}
           getTooltipContainer={node => node.parentNode}
-          title='Specify shift back'>
+          title={`Specify shift back in ${enableTimeSelect ? 'hours' : 'days'}`}>
           <InputNumber
-            formatter={value => `${value}${enableTimeSelect ? 'hours' : 'days'}`}
-            parser={value => {
-              const intValue = parseInt(value)
-              return isNaN(intValue) ? 1 : intValue;
-            }}
             disabled={disabled}
             value={shift}
             precision={0}
-            onChange={R.ifElse(R.equals(0), R.always(shift), setShift)}
-            placeholder="Input a number"
+            onChange={setShift}
+            placeholder={`${enableTimeSelect ? 'HH' : 'DD'}`}
           />
         </Tooltip>
-        <Checkbox onChange={() => setEnableTimeSelect(!enableTimeSelect)}
-                  checked={enableTimeSelect}
-                  disabled={disabled}>
-          Hours
-        </Checkbox>
+        <Tooltip
+          mouseEnterDelay={1}
+          getPopupContainer={node => node.parentNode}
+          getTooltipContainer={node => node.parentNode}
+          title={`In hours?`}>
+          <Checkbox onChange={() => setEnableTimeSelect(!enableTimeSelect)}
+                    checked={enableTimeSelect}
+                    disabled={disabled}/>
+        </Tooltip>
+
       </Space>
     </>
   );

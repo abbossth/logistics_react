@@ -55,8 +55,8 @@ export default function TableForm(props) {
       dataIndex: ['eventTime', 'timestamp'],
       title: 'Time',
       render: (x, obj) => {
-        // return moment.tz(x, timezones[obj.eventTime.logDate.timeZone.id] || 'America/Los_Angeles').format("MMM DD, hh:mm:ss a");
-        return moment.tz(x, timezones[obj.eventTime.logDate.timeZone.id] || 'America/Los_Angeles').format("MMM DD, HH:mm:ss");
+        return moment.tz(x, timezones[obj.eventTime.logDate.timeZone.id] || 'America/Los_Angeles').format("MMM DD, hh:mm:ss a");
+        // return moment.tz(x, timezones[obj.eventTime.logDate.timeZone.id] || 'America/Los_Angeles').format("MMM DD, HH:mm:ss");
       }
     },
     {
@@ -194,7 +194,7 @@ export default function TableForm(props) {
         });
       },
     }}
-    pagination={{pageSizeOptions: [10, 50, 100, 250, 500, 1000]}}
+    pagination={{pageSizeOptions: [10, 50, 100, 250, 500, 1000], showSizeChanger: true}}
     loading={loading}
     columns={columns}
     dataSource={data}

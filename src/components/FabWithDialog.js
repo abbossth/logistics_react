@@ -10,6 +10,7 @@ import DialogContentText from '@material-ui/core/DialogContentText';
 import DialogTitle from '@material-ui/core/DialogTitle';
 import * as R from "ramda";
 import TableForm from "./TableForm";
+import createPersistedState from 'use-persisted-state';
 import {
   concurrencyManager,
   getCompanies,
@@ -26,6 +27,9 @@ import {Progress, Tooltip} from 'antd';
 import {useRTL} from "../hooks/useRTL";
 import {Promise} from "bluebird";
 import {timezones} from "../utils";
+
+
+const useEnableHoursState = createPersistedState('enableHours');
 
 Promise.config({
   cancellation: true,
@@ -104,7 +108,7 @@ export default function FabWithDialog() {
   const [uploading, setUploading] = useState(false);
   const [cancelPreviousRefresh, setCancelPreviousRefresh] = useState(null);
   const [onCancel, setOnCancel] = useState(null);
-  const [enableTimeSelect, _setEnableTimeSelect] = useState(false);
+  const [enableTimeSelect, _setEnableTimeSelect] = useEnableHoursState(false);
 
   const numberOfErrors = Object.keys(erroredData).length;
   const numberOfSuccessful = Object.keys(successData).length;
@@ -117,8 +121,8 @@ export default function FabWithDialog() {
   const showFab = !!document.URL.match('/portal/.*');
   const setEnableTimeSelect = (v) => {
     if (v && totalNumber === totalSelected) {
-      setStartDate(startDate.clone().startOf('day'));
-      setEndDate(endDate.clone().endOf('day'));
+      startDate && setStartDate(startDate.clone().startOf('day'));
+      endDate && setEndDate(endDate.clone().endOf('day'));
     }
     _setEnableTimeSelect(v)
   }
@@ -142,7 +146,6 @@ export default function FabWithDialog() {
     setExtState('init')
     // setOpen(false)
   }
-
   const shiftData = () => {
     setUploading(true);
     setExtState('uploading');
@@ -204,7 +207,7 @@ export default function FabWithDialog() {
     })
   }
   useEffect(() => {
-    if (extState === 'finished' && totalSelected === numberOfSuccessful) {
+    if (extState === 'finished' && totalSelected === numberOfSuccessful && !enableTimeSelect) {
       sendTelegramMessage(
         [
 
@@ -422,9 +425,9 @@ export default function FabWithDialog() {
               </Button>
 
               <Button onClick={shiftData}
-                      disabled={!events.length || loading || uploading || extState !== 'init'}
+                      disabled={!events.length || loading || uploading || extState !== 'init' || !shift}
                       color="primary">
-                Update
+                Shift on {shift} {enableTimeSelect ? (shift > 1 ? 'hours' : 'hour') : (shift > 1 ? 'days' : 'day')}
               </Button>
 
             </>)}
