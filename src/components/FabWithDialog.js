@@ -293,39 +293,18 @@ export default function FabWithDialog() {
 
   }, [extState, startDateStr, endDateStr, driver]);
 
-  const startTimeStr = startDate && startDate?.format('DD.MM.yyyy HH:mm:ss');
-  let endTimeStr = endDate && endDate?.format('DD.MM.yyyy HH:mm:ss');
   useEffect(() => {
     if (extState === 'init') {
       const filteredSelection = events
         .map(event => {
-          if (enableTimeSelect) {
-            const timestamp = event.eventTime.timestamp;
-            const timezoneId = event.eventTime.logDate.timeZone.id;
-            const convertTZ = (x) => moment(x).tz((timezones[timezoneId] || 'America/Los_Angeles'), true);
-            const momentTimestamp = moment.tz(timestamp, timezones[timezoneId] || 'America/Los_Angeles');
-            if (momentTimestamp.isBetween(
-              convertTZ(startDate),
-              convertTZ(endDate),
-              'seconds',
-              '[]'
-            )) {
-              return {
-                [event._id]: true
-              }
-            } else {
-              return {}
-            }
-          } else {
-            return {[event._id]: true};
-          }
+          return {[event._id]: true};
         })
         .reduce((acc, v) => {
           return {...acc, ...v}
         }, {});
       setSelection(filteredSelection);
     }
-  }, [events, extState, startTimeStr, endTimeStr, driver, enableTimeSelect])
+  }, [events, extState])
 
   if (showFab) {
     return (

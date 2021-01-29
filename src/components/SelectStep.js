@@ -42,8 +42,6 @@ export default function SelectStep(props) {
         <DatePicker.RangePicker
           disabled={disabled}
           allowClear={false}
-          showTime={enableTimeSelect}
-          // getPopupContainer={() => container}
           getPopupContainer={node => node.parentNode}
           value={[startDate, endDate]}
           onChange={range => {
