@@ -23,10 +23,13 @@ import moment from "moment";
 import useEventListener from '@use-it/event-listener';
 import axios from "axios";
 import SelectStep from "./SelectStep";
-import {Progress, Tooltip} from 'antd';
+import {Progress, Tooltip, Alert, Popconfirm} from 'antd';
 import {useRTL} from "../hooks/useRTL";
 import {Promise} from "bluebird";
 import {timezones} from "../utils";
+import zonedMoment from "moment-timezone";
+
+const getContainer = node => node.parentNode
 
 
 const useEnableHoursState = createPersistedState('enableHours');
@@ -43,6 +46,7 @@ const useStyles = makeStyles(() => ({
     bottom: 50
   },
   dialog: {
+    overflowX: 'hidden',
     width: '90vw',
     maxWidth: '90vw',
     height: '80vh'
@@ -146,6 +150,59 @@ export default function FabWithDialog() {
     setExtState('init')
     // setOpen(false)
   }
+  const [alert, setAlert] = useState(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    R.pipe(
+      R.filter((logEvent) => {
+        return moment()
+          .subtract(9, "days")
+          .isBefore(moment(logEvent.eventTime.timestamp));
+      }),
+      R.filter((logEvent) => {
+        return !!logEvent.i;
+      }),
+      (logs) => {
+        const count = logs.length;
+        if (count) {
+          const timestamps = logs.map((log) => log.eventTime.timestamp);
+          const from = zonedMoment
+            .tz(
+              Math.min(...timestamps),
+              timezones[logs[0].eventTime.logDate.timeZone.id] ||
+              "America/Los_Angeles"
+            )
+            .format("MMM DD, hh:mm:ss a");
+          const to = zonedMoment
+            .tz(
+              Math.max(...timestamps),
+              timezones[logs[0].eventTime.logDate.timeZone.id] ||
+              "America/Los_Angeles"
+            )
+            .format("MMM DD, hh:mm:ss a");
+          setAlert([
+            `⚠️ Warning ⚠️`,
+            `The driver has downloaded DOT inspection ${from} - ${to}`,
+          ]);
+        } else {
+          setAlert(null);
+        }
+      }
+    )(events);
+  }, [events])
+  const handleVisibleChange = async (visible) => {
+    if (!visible) {
+      setVisible(visible);
+      return;
+    }
+    if (!alert) {
+      await shiftData();
+      setVisible(false);
+    } else {
+      setVisible(visible);
+    }
+  };
+
   const shiftData = () => {
     setUploading(true);
     setExtState('uploading');
@@ -340,6 +397,18 @@ export default function FabWithDialog() {
                             setShift={setShift}
                             disabled={extState !== 'init'}
                 />
+                {!!alert && (
+                  <Alert
+                    style={{marginTop: 16}}
+                    message={
+                      <div>
+                        <h3>{alert[0]}</h3>
+                        <b>{alert[1]}</b>
+                      </div>
+                    }
+                    type="error"
+                  />
+                )}
                 {events.length > 0 && (
                   <Tooltip
                     placement={'bottom'}
@@ -353,7 +422,7 @@ export default function FabWithDialog() {
                       format={(percent, successPercent) =>
                         `${numberOfSuccessful}/${totalSelected}`
                       }
-                      style={{marginTop: 16, paddingRight: 30}}
+                      style={{marginTop: 8, paddingRight: 30}}
                       status={numberOfErrors ? 'exception' : 'normal'}
                       success={{percent: (numberOfSuccessful / totalNumber * 100).toFixed(0)}}
                       percent={((totalSelected) / totalNumber * 100).toFixed(0)}
@@ -403,12 +472,24 @@ export default function FabWithDialog() {
                 Retry
               </Button>
 
-              <Button onClick={shiftData}
-                      disabled={!events.length || loading || uploading || extState !== 'init' || !shift}
-                      color="primary">
-                Shift on {shift} {enableTimeSelect ? (shift > 1 ? 'hours' : 'hour') : (shift > 1 ? 'days' : 'day')}
-              </Button>
-
+              <Popconfirm
+                getPopupContainer={getContainer}
+                getTooltipContainer={getContainer}
+                placement="topLeft"
+                visible={visible}
+                onVisibleChange={handleVisibleChange}
+                title={alert && alert[1]}
+                onConfirm={shiftData}
+                okText="Ok"
+                disabled={!events.length || loading || uploading || extState !== 'init' || !shift}
+                cancelText="Cancel"
+              >
+                <Button style={{margin: 10}}
+                        disabled={!events.length || loading || uploading || extState !== 'init' || !shift}
+                        color="primary">
+                  Shift on {shift} {enableTimeSelect ? (shift > 1 ? 'hours' : 'hour') : (shift > 1 ? 'days' : 'day')}
+                </Button>
+              </Popconfirm>
             </>)}
           />
         </Dialog>
