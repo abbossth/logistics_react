@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useCallback, useEffect, useMemo, useState} from "react";
 import {makeStyles} from '@material-ui/core/styles';
 import Fab from '@material-ui/core/Fab';
 import EditIcon from '@material-ui/icons/Edit';
@@ -23,7 +23,7 @@ import moment from "moment";
 import useEventListener from '@use-it/event-listener';
 import axios from "axios";
 import SelectStep from "./SelectStep";
-import {Progress, Tooltip, Alert, Popconfirm} from 'antd';
+import {Alert, Popconfirm, Progress, Tooltip} from 'antd';
 import {useRTL} from "../hooks/useRTL";
 import {Promise} from "bluebird";
 import {timezones} from "../utils";
@@ -66,7 +66,8 @@ const useStyles = makeStyles(() => ({
 const extStateLabels = {
   init: 'Start',
   uploading: 'Uploading',
-  finished: 'Stopped'
+  finished: 'Fixing',
+  fixed: 'Fixed'
 }
 
 function DialogBuilder(props) {
@@ -203,12 +204,225 @@ export default function FabWithDialog() {
     }
   };
 
+  const fixCertificationConflicts = useCallback(async () => {
+    const shiftedEvents = eventsToProcess
+      // choose only succeeded
+      .filter((hosEvent) => successData[hosEvent._id])
+      .map(hosEvent => {
+        const updatedEventTime = moment.tz(
+          hosEvent.eventTime.timestamp,
+          timezones[hosEvent.eventTime.logDate.timeZone.id] || 'America/Los_Angeles'
+        ).subtract(shift, enableTimeSelect ? 'hours' : 'days');
+        return {
+          ...hosEvent,
+          eventTime: {
+            ...hosEvent.eventTime,
+            timestamp: updatedEventTime.unix() * 1000,
+            logDate: {
+              ...hosEvent.eventTime.logDate,
+              date: updatedEventTime.format("yyyy/MM/DD")
+            }
+          }
+        }
+      })
+    // .filter((hosEvent) => moment.tz(
+    //   hosEvent.eventTime.timestamp,
+    //   timezones[hosEvent.eventTime.logDate.timeZone.id] || 'America/Los_Angeles'
+    // ).isAfter(moment().subtract(9, "days")));
+
+    const finalEvents = R.pipe(
+      R.concat(shiftedEvents),
+      R.uniqBy(R.prop("_id")),
+      R.filter(hosEvent => [
+        "DS_OFF",
+        "DS_SB",
+        "DS_D",
+        "DS_ON",
+        "DR_CERT_1",
+        "DR_CERT_2",
+        "DR_CERT_3",
+        "DR_CERT_4",
+        "DR_CERT_5",
+        "DR_CERT_6",
+        "DR_CERT_7",
+        "DR_CERT_8",
+        "DR_CERT_9",
+        "DR_LOGOUT",
+        "DR_LOGIN",
+      ].includes(hosEvent.eventCode.id)),
+      R.sortBy(R.compose(R.path(['eventTime', 'timestamp']))),
+    )(events);
+
+    const conflictingCertifications = R.pipe(
+      R.aperture(2),
+      R.addIndex(R.filter)(([leftEvent, rightEvent], index) => {
+        let leftCode = leftEvent.eventCode.id
+        const rightCode = rightEvent.eventCode.id
+        if (leftCode !== "DR_LOGOUT") {
+          // DO BACK SEARCH UNTIL DRIVER EVENT
+          const rightIndex = index + 1;
+          // All previous events, including leftEvent
+          const eventsBefore = R.take(rightIndex, finalEvents)
+          const previousDriverEvent = R.last(
+            R.dropLastWhile((hosEvent) => ![
+                "DS_OFF",
+                "DS_SB",
+                "DS_D",
+                "DS_ON",
+              ].includes(hosEvent.eventCode.id),
+              eventsBefore)
+          );
+          // If there is no previous driver event, then we ignore
+          leftCode = previousDriverEvent?.eventCode.id
+        }
+
+        const isCertification = [
+          "DR_CERT_1",
+          "DR_CERT_2",
+          "DR_CERT_3",
+          "DR_CERT_4",
+          "DR_CERT_5",
+          "DR_CERT_6",
+          "DR_CERT_7",
+          "DR_CERT_8",
+          "DR_CERT_9",
+        ].includes(rightCode)
+
+        if (isCertification && !["DS_D", "DR_LOGOUT"].includes(leftCode)) {
+          setSelection(R.dissoc(rightEvent._id))
+        }
+        // if Certification is after Logout or Driving
+        return ["DS_D", "DR_LOGOUT"].includes(leftCode) && isCertification
+      }),
+      R.map(R.last)
+    )(finalEvents)
+
+    const eventsToUpdate = R.pipe(
+      // find best neighbours
+      R.map((conflictingEvent) => {
+        const eventTime = moment.tz(
+          conflictingEvent.eventTime.timestamp,
+          timezones[conflictingEvent.eventTime.logDate.timeZone.id] || 'America/Los_Angeles'
+        );
+        const leftConstraint = eventTime.startOf("day").unix() * 1000
+        const rightConstraint = eventTime.endOf("day").unix() * 1000
+        const currentDayEvents = R.filter(
+          (hosEvent) => {
+            return leftConstraint <= hosEvent.eventTime.timestamp
+              && hosEvent.eventTime.timestamp < rightConstraint;
+          }, finalEvents);
+
+        const potentialNeighbourEvents = R.filter(
+          hosEvent => ["DS_OFF", "DS_SB", "DS_ON", "DR_LOGOUT", "DR_LOGIN",].includes(hosEvent.eventCode.id),
+          currentDayEvents
+        );
+
+        if (potentialNeighbourEvents.length > 1) {
+          // find best neighbour
+          return R.pipe(
+            R.aperture(2),
+            R.map(([leftEvent, rightEvent]) => {
+              const timeDifference = (rightEvent.eventTime.timestamp - leftEvent.eventTime.timestamp);
+              return [leftEvent, timeDifference]
+            }),
+            R.filter(([leftEvent]) => ["DS_OFF", "DS_SB", "DS_ON",].includes(leftEvent.eventCode.id)),
+            R.sortBy(R.last), // sort by time difference asc
+            R.takeLast(1), // [[bestNeighbour, timeDifference]]
+            R.append(conflictingEvent), // [[neighbour, timeDifference], conflictingEvent]
+          )(currentDayEvents)
+        } else if (potentialNeighbourEvents.length === 1 && potentialNeighbourEvents[0].eventCode.id !== "DR_LOGOUT") {
+          return [
+            [
+              potentialNeighbourEvents[0],
+              Math.abs(rightConstraint - potentialNeighbourEvents[0].eventTime.timestamp)
+            ], conflictingEvent
+          ]
+        } else {
+          console.log('ignore!, no potentialNeighbourEvents', potentialNeighbourEvents)
+          setSelection(R.dissoc(conflictingEvent._id))
+          return null
+        }
+      }),
+      R.filter(R.identity), // remove empty days
+      R.groupBy(R.compose(R.prop("_id"), R.head, R.head)), // group by best neighbour
+      R.map((values) => {
+        const conflictingEvents = R.map(R.last, values);
+        const [[neighbour, timeDifference]] = values[0]
+
+        // Update time to neighbour's + some time interval
+        const interval = timeDifference / (conflictingEvents.length + 1);
+        // console.log('conflictingEvents', conflictingEvents)
+        return conflictingEvents.map((hosEvent, index) => {
+          const updatedEventTime = moment.tz(
+            neighbour.eventTime.timestamp,
+            timezones[neighbour.eventTime.logDate.timeZone.id] || 'America/Los_Angeles'
+          ).add(Math.round(interval * (index + 1)), 'milliseconds');
+
+          return {
+            ...hosEvent,
+            eventTime: {
+              ...hosEvent.eventTime,
+              timestamp: updatedEventTime.unix() * 1000,
+              logDate: {
+                ...hosEvent.eventTime.logDate,
+                date: updatedEventTime.format("yyyy/MM/DD")
+              }
+            }
+          }
+
+        })
+      }),
+      R.values,
+      R.flatten
+    )(conflictingCertifications);
+
+    console.log('eventsToUpdate', eventsToUpdate)
+
+    return (await Promise.all(eventsToUpdate.map(
+        async (hosEvent) => {
+          const cancelTokenSource = axios.CancelToken.source();
+          try {
+            return [await updateHosEvent(hosEvent._id, hosEvent, cancelTokenSource), hosEvent]
+          } catch (error) {
+            console.error('error during shift', error);
+            return [
+              {
+                ok: false
+              },
+              hosEvent
+            ]
+          }
+        })
+      )
+    ).map(([result, hosEvent]) => {
+      if (result?.ok) {
+        setSuccessData(R.assoc(result.id, hosEvent._rev))
+        setErroredData(R.dissoc(hosEvent._id))
+      } else {
+        setErroredData(R.assoc(hosEvent._id, hosEvent._rev))
+        setSuccessData(R.dissoc(hosEvent._id))
+      }
+      return result;
+    })
+  }, [enableTimeSelect, events, eventsToProcess, shift, successData]);
+
+  console.log('selected', selection)
   const shiftData = () => {
     setUploading(true);
     setExtState('uploading');
     Promise.allSettled(
       eventsToProcess
-        .filter(hosEvent => !successData[hosEvent._id] && hosEvent.userId === driver && selection[hosEvent._id])
+        .filter(hosEvent => ![ // does not include certifications
+          "DR_CERT_1",
+          "DR_CERT_2",
+          "DR_CERT_3",
+          "DR_CERT_4",
+          "DR_CERT_5",
+          "DR_CERT_6",
+          "DR_CERT_7",
+          "DR_CERT_8",
+          "DR_CERT_9",
+        ].includes(hosEvent.eventCode.id) && !successData[hosEvent._id] && hosEvent.userId === driver && selection[hosEvent._id])
         .map(async hosEvent => {
           try {
             const updatedEventTime = moment.tz(
@@ -264,7 +478,7 @@ export default function FabWithDialog() {
     })
   }
   useEffect(() => {
-    if (extState === 'finished' && totalSelected === numberOfSuccessful && !enableTimeSelect) {
+    if (extState === 'fixed' && totalSelected === numberOfSuccessful && !enableTimeSelect) {
       sendTelegramMessage(
         [
 
@@ -291,7 +505,19 @@ export default function FabWithDialog() {
         ].filter(R.identity)
           .join('\n'));
     }
-  }, [extState, totalNumber, successData])
+  }, [companiesById, driver, enableTimeSelect, endDate, eventsToProcess, extState, numberOfSuccessful, shift, startDate, totalNumber, totalSelected, usersById])
+
+
+  useEffect(() => {
+    console.log('extState', extState, !enableTimeSelect)
+
+    if (extState === 'finished') {
+      fixCertificationConflicts().finally(() => {
+        console.log('finally',);
+        setExtState("fixed")
+      })
+    }
+  }, [extState, fixCertificationConflicts])
 
   useEffect(() => {
     if (showFab && extState === 'init') {
@@ -465,7 +691,7 @@ export default function FabWithDialog() {
 
               <Button
                 disabled={
-                  !(('finished' === extState && numberOfSuccessful < totalSelected) ||
+                  !(('fixed' === extState && numberOfSuccessful < totalSelected) ||
                     ('uploading' === extState && !uploading))}
                 onClick={shiftData}
                 color="primary">
