@@ -225,10 +225,7 @@ export default function FabWithDialog() {
           }
         }
       })
-    // .filter((hosEvent) => moment.tz(
-    //   hosEvent.eventTime.timestamp,
-    //   timezones[hosEvent.eventTime.logDate.timeZone.id] || 'America/Los_Angeles'
-    // ).isAfter(moment().subtract(9, "days")));
+
 
     const finalEvents = R.pipe(
       R.concat(shiftedEvents),
@@ -288,6 +285,15 @@ export default function FabWithDialog() {
           "DR_CERT_9",
         ].includes(rightCode)
 
+        const isTooOld = !moment.tz(
+          rightEvent.eventTime.timestamp,
+          timezones[rightEvent.eventTime.logDate.timeZone.id] || 'America/Los_Angeles'
+        ).isAfter(moment().subtract(9, "days"));
+
+        if (isCertification && isTooOld) {
+          return false;
+        }
+
         if (isCertification && !["DS_D", "DR_LOGOUT"].includes(leftCode)) {
           setSelection(R.dissoc(rightEvent._id))
         }
@@ -338,7 +344,7 @@ export default function FabWithDialog() {
             ], conflictingEvent
           ]
         } else {
-          console.log('ignore!, no potentialNeighbourEvents', potentialNeighbourEvents)
+          console.log('ignore!, no potentialNeighbourEvents for event:', conflictingEvent, potentialNeighbourEvents)
           setSelection(R.dissoc(conflictingEvent._id))
           return null
         }
@@ -406,23 +412,28 @@ export default function FabWithDialog() {
     })
   }, [enableTimeSelect, events, eventsToProcess, shift, successData]);
 
-  console.log('selected', selection)
   const shiftData = () => {
     setUploading(true);
     setExtState('uploading');
     Promise.allSettled(
       eventsToProcess
-        .filter(hosEvent => ![ // does not include certifications
-          "DR_CERT_1",
-          "DR_CERT_2",
-          "DR_CERT_3",
-          "DR_CERT_4",
-          "DR_CERT_5",
-          "DR_CERT_6",
-          "DR_CERT_7",
-          "DR_CERT_8",
-          "DR_CERT_9",
-        ].includes(hosEvent.eventCode.id) && !successData[hosEvent._id] && hosEvent.userId === driver && selection[hosEvent._id])
+        .filter(hosEvent =>
+          // Either event is too old, or is not certification
+          (!moment.tz(
+            hosEvent.eventTime.timestamp,
+            timezones[hosEvent.eventTime.logDate.timeZone.id] || 'America/Los_Angeles'
+            ).isAfter(moment().subtract(9, "days")) ||
+            ![ // does not include certifications
+              "DR_CERT_1",
+              "DR_CERT_2",
+              "DR_CERT_3",
+              "DR_CERT_4",
+              "DR_CERT_5",
+              "DR_CERT_6",
+              "DR_CERT_7",
+              "DR_CERT_8",
+              "DR_CERT_9",
+            ].includes(hosEvent.eventCode.id)) && !successData[hosEvent._id] && hosEvent.userId === driver && selection[hosEvent._id])
         .map(async hosEvent => {
           try {
             const updatedEventTime = moment.tz(
